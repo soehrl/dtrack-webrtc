@@ -1,8 +1,12 @@
+#include <cassert>
+#include <csignal>
 #include <iostream>
 #include <memory>
 
 #include "DTrackSDK.hpp"
 #include "spdlog/spdlog.h"
+#include "nlohmann/json.hpp"
+#include "websocket_server.hpp"
 
 void log_error(DTrackSDK* dtrack) {
   switch (dtrack->getLastDataError()) {
@@ -40,11 +44,57 @@ void log_error(DTrackSDK* dtrack) {
   }
 }
 
+
+nlohmann::json serialize_body(const DTrackBody* body) {
+  assert(body);
+
+  nlohmann::json serialized_body = nlohmann::json::object();
+  serialized_body["id"] = body->id;
+
+  if (body->isTracked()) {
+    serialized_body["loc"] = body->loc;
+    serialized_body["rot"] = body->rot;
+  }
+
+  return serialized_body;
+}
+
+nlohmann::json serialize_data(DTrackSDK* dtrack) {
+
+  nlohmann::json bodies = nlohmann::json::array();
+	for (int i = 0; i < dtrack->getNumBody(); ++i) {
+    bodies[i] = serialize_body(dtrack->getBody(i));
+  }
+
+  nlohmann::json data = {
+    {"frame", dtrack->getFrameCounter()},
+    {"time", dtrack->getTimeStamp()},
+    {"bodies", std::move(bodies)},
+  };
+
+  return data;
+}
+
+bool quit = false;
+
+void handle_signint(int) {
+  quit = true;
+}
+
 int main(int argc, char** argv){
-	if (argc != 2) {
-    spdlog::error("Usage: example_universal [<server host/ip>:]<data port>");
+	if (argc != 3) {
+    spdlog::error("Usage: example_universal [<server host/ip>:]<data port> websocket_port");
 		return -1;
 	}
+
+  struct sigaction sigint_handler;
+  sigint_handler.sa_handler = handle_signint;
+  sigemptyset(&sigint_handler.sa_mask);
+  sigint_handler.sa_flags = 0;
+
+  sigaction(SIGINT, &sigint_handler, nullptr);
+
+  start_server(atoi(argv[2]));
 
   spdlog::info("Connecting to {}", argv[1]);
 
@@ -76,90 +126,21 @@ int main(int argc, char** argv){
     log_error(dtrack.get());
   }
 
-  for (int i = 0; i < 100; ++i) {
+  while (!quit) {
     if (dtrack->receive()) {
-      spdlog::info("Received stuff");
+      broadcast_message(serialize_data(dtrack.get()));
     } else {
       log_error(dtrack.get());
     }
   }
 
+  spdlog::info("Quit server");
+  quit_server();
 
   spdlog::info("Stop measurement");
   if (!dtrack->stopMeasurement()) {
     log_error(dtrack.get());
   }
-	// // initialization:
-
-	// dt = new DTrackSDK( (const char *)argv[ 1 ] );
-
-	// if ( ! dt->isDataInterfaceValid() )
-	// {
-	// 	std::cout << "DTrackSDK init error" << std::endl;
-	// 	delete dt;
-	// 	return -3;
-	// }
-	// std::cout << "connected to ATC '" << argv[ 1 ] << "', listening at local data port " << dt->getDataPort() << std::endl;
-
-// //	dt->setCommandTimeoutUS( 30000000 );  // NOTE: change here timeout for exchanging commands, if necessary
-// //	dt->setDataTimeoutUS( 3000000 );      // NOTE: change here timeout for receiving tracking data, if necessary
-// //	dt->setDataBufferSize( 100000 );      // NOTE: change here buffer size for receiving tracking data, if necessary
-
-	// // request some settings:
-
-	// if ( dt->isCommandInterfaceValid() )
-	// {
-	// 	std::string par;
-	// 	bool isOk = dt->getParam( "system", "access", par );  // ensure full access for DTrack2 commands
-	// 	if ( ( ! isOk ) || ( par.compare( "full" ) != 0 ) )
-	// 	{
-	// 		std::cout << "Full access to ATC required!" << std::endl;  // maybe DTrack2/3 frontend is still connected to ATC
-	// 		data_error_to_console();
-	// 		messages_to_console();
-	// 		delete dt;
-	// 		return -10;
-	// 	}
-	// }
-
-	// // measurement:
-
-	// if ( dt->isCommandInterfaceValid() )
-	// {
-	// 	if ( ! dt->startMeasurement() )  // start measurement
-	// 	{
-	// 		std::cout << "Measurement start failed!" << std::endl;
-	// 		data_error_to_console();
-	// 		messages_to_console();
-	// 		delete dt;
-	// 		return -4;
-	// 	}
-	// }
-
-	// int count = 0;
-	// while ( count++ < 1000 )  // collect 1000 frames
-	// {
-	// 	if ( dt->receive() )
-	// 	{
-	// 		output_to_console();
-	// 	}
-	// 	else
-	// 	{
-	// 		data_error_to_console();
-	// 		if ( dt->isCommandInterfaceValid() )  messages_to_console();
-	// 	}
-
-	// 	if ( ( count % 100 == 1 ) && dt->isCommandInterfaceValid() )
-	// 		messages_to_console();
-	// }
-
-	// if ( dt->isCommandInterfaceValid() )
-	// {
-	// 	dt->stopMeasurement();  // stop measurement
-	// 	messages_to_console();
-	// }
-
-	// delete dt;  // clean up
-	// return 0;
 }
 
 
@@ -178,34 +159,6 @@ int main(int argc, char** argv){
 // 	          << " nhuman " << dt->getNumHuman() << " ninertial " << dt->getNumInertial()
 // 	          << std::endl;
 
-// 	// Standard bodies:
-// 	for ( int i = 0; i < dt->getNumBody(); i++ )
-// 	{
-// 		const DTrackBody* body = dt->getBody( i );
-// 		if ( body == NULL )
-// 		{
-// 			std::cout << "DTrackSDK fatal error: invalid body id " << i << std::endl;
-// 			break;
-// 		}
-
-// 		if ( ! body->isTracked() )
-// 		{
-// 			std::cout << "bod " << body->id << " not tracked" << std::endl;
-// 		}
-// 		else
-// 		{
-// 			std::cout << "bod " << body->id << " qu " << body->quality
-// 			          << " loc " << body->loc[ 0 ] << " " << body->loc[ 1 ] << " " << body->loc[ 2 ]
-// 			          << " rot " << body->rot[ 0 ] << " " << body->rot[ 1 ] << " " << body->rot[ 2 ]
-// 			          << " "     << body->rot[ 3 ] << " " << body->rot[ 4 ] << " " << body->rot[ 5 ]
-// 			          << " "     << body->rot[ 6 ] << " " << body->rot[ 7 ] << " " << body->rot[ 8 ]
-// 			          << std::endl;
-
-// 			DTrackQuaternion quat = body->getQuaternion();
-// 			std::cout << "bod " << body->id << " quatw " << quat.w
-// 			          << " quatxyz " << quat.x << " " << quat.y << " " << quat.z << std::endl;
-// 		}
-// 	}
 
 // 	// A.R.T. Flysticks:
 // 	for ( int i = 0; i < dt->getNumFlyStick(); i++ )
