@@ -27,3 +27,8 @@ target_link_libraries(
     spdlog::spdlog
     dtrack::dtrack
 )
+
+set_property(
+  TARGET dtrack-webrtc
+  PROPERTY CXX_STANDARD 17
+)
