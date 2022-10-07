@@ -4,7 +4,7 @@ cmake_minimum_required(
 )
 
 project(
-  dtrack-web
+  webcave-server
   VERSION 0.0.0
   LANGUAGES CXX
 )
@@ -16,37 +16,40 @@ CPMAddPackage("gh:gabime/spdlog@1.10.0")
 CPMAddPackage("gh:soehrl/dtrack-cmake-wrapper#main")
 CPMAddPackage("gh:zaphoyd/websocketpp#0.8.2")
 CPMAddPackage("gh:chriskohlhoff/asio#asio-1-24-0")
+CPMAddPackage("gh:adishavit/argh@1.3.2")
 
 add_executable(
-  dtrack-web
+  webcave-server
 
   src/main.cpp
-  src/websocket_server.cpp
+  src/webcave_server.cpp
+  src/dtrack.cpp
 )
 
 target_link_libraries(
-  dtrack-web
+  webcave-server
   PRIVATE
     fmt::fmt
     spdlog::spdlog
     dtrack::dtrack
     nlohmann_json::nlohmann_json
+    argh
 )
 
 target_include_directories(
-  dtrack-web
+  webcave-server
   PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}/_deps/websocketpp-src
     ${CMAKE_CURRENT_BINARY_DIR}/_deps/asio-src/asio/include
 )
 
 target_compile_definitions(
-  dtrack-web
+  webcave-server
   PRIVATE
     -DASIO_STANDALONE=1
 )
 
 set_property(
-  TARGET dtrack-web
+  TARGET webcave-server
   PROPERTY CXX_STANDARD 17
 )
