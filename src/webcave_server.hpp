@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <thread>
 
 #include "dtrack.hpp"
