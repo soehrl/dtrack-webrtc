@@ -26,7 +26,32 @@ int WebCaveServer::Run() {
   });
   m_websocket_server.set_message_handler([this](const auto& connection_handle, const auto& message) {
     assert(m_connections.find(connection_handle) != m_connections.end());
-    // m_connections[connection_handle].fra
+    try {
+      const auto parsed_message = nlohmann::json::parse(message->get_payload());
+      if (parsed_message["type"] == "frameReady") {
+        bool ready = true;
+        // std::unique_lock<std::mutex> lock(m_connections_mutex);
+        {
+          m_connections[connection_handle].frame = parsed_message["frame"];
+          for (const auto& [_, connection_data] : m_connections) {
+            if (connection_data.frame != m_current_frame - 1) {
+              ready = false;
+              break;
+            }
+          }
+        }
+        if (ready) {
+          Broadcast({
+            { "type", "displayFrame" },
+            { "frame", m_current_frame - 1 },
+          });
+        }
+      } else {
+        spdlog::warn("Unknown message from {}: {}", "TODO", parsed_message.dump(1));
+      }
+    } catch (const std::exception& error) {
+      spdlog::error("{}", error.what());
+    }
   });
 
   spdlog::info("Starting server on port {}", m_options.port);
